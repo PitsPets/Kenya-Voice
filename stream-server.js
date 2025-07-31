@@ -37,41 +37,48 @@ app.post('/twiml', (req, res) => {
 // --- WEBSOCKET SERVER ---
 const wss = new WebSocketServer({ noServer: true });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   let audioChunks = [];
 
   ws.on('message', async (data) => {
-  const msg = JSON.parse(data);
+    const msg = JSON.parse(data);
 
-  if (msg.event === 'start') {
-    console.log("🎤 Stream started");
-    audioChunks = []; // Reset in case reused
-  } else if (msg.event === 'media') {
-    const audio = Buffer.from(msg.media.payload, 'base64');
-    audioChunks.push(audio);
-    console.log(`📡 Received ${audio.length} bytes`);
-  } else if (msg.event === 'stop') {
-    console.log("🛑 Stream stopped. Processing audio...");
-    const fullAudio = Buffer.concat(audioChunks);
-    const wavPath = path.join(AUDIO_DIR, `input-${uuidv4()}.wav`);
-    fs.writeFileSync(wavPath, fullAudio);
+    if (msg.event === 'start') {
+      console.log("🎤 Stream started");
+      audioChunks = []; // Reset for new session
+    } else if (msg.event === 'media') {
+      const audio = Buffer.from(msg.media.payload, 'base64');
+      audioChunks.push(audio);
+      console.log(`📡 Received ${audio.length} bytes`);
+    } else if (msg.event === 'stop') {
+      console.log("🛑 Stream stopped. Processing audio...");
+      const fullAudio = Buffer.concat(audioChunks);
+      const wavPath = path.join(AUDIO_DIR, `input-${uuidv4()}.wav`);
+      fs.writeFileSync(wavPath, fullAudio);
 
-    try {
-      const transcript = await transcribeAudio(fullAudio);
-      const reply = await askKenya(transcript);
-      const mp3Url = await synthesizeGoogleTTS(reply);
+      try {
+        const transcript = await transcribeAudio(fullAudio);
+        const reply = await askKenya(transcript);
+        const mp3Url = await synthesizeGoogleTTS(reply);
 
-      console.log(`📝 Transcript: ${transcript}`);
-      console.log(`💬 Reply: ${reply}`);
-      console.log(`🔊 MP3 URL: ${mp3Url}`);
+        console.log(`📝 Transcript: ${transcript}`);
+        console.log(`💬 Reply: ${reply}`);
+        console.log(`🔊 MP3 URL: ${mp3Url}`);
 
-      
-    } catch (err) {
-      console.error("❌ Error during processing:", err);
+        // Send playback command to Twilio
+        ws.send(JSON.stringify({
+          event: 'playback',
+          twiml: `
+            <Response>
+              <Play>https://${process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host}${mp3Url}</Play>
+            </Response>
+          `
+        }));
+      } catch (err) {
+        console.error("❌ Error during processing:", err);
+      }
     }
-  }
-});
-
+  });
 });
 
 app.server = app.listen(port, () => {
