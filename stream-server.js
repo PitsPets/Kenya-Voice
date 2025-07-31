@@ -24,12 +24,12 @@ if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
 // --- TWILIO TWIML RESPONSE ---
 app.post('/twiml', (req, res) => {
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-    <Response>
-      <Say>Hi! Kenya is now listening.</Say>
-      <Connect>
-        <Stream url="wss://${req.headers.host}/stream" />
-      </Connect>
-    </Response>`;
+<Response>
+  <Say>Hi! This is Kenya. I'm now listening.</Say>
+  <Connect>
+    <Stream url="wss://${req.headers.host}/stream" />
+  </Connect>
+</Response>`;
   res.type('text/xml');
   res.send(twiml);
 });
@@ -45,7 +45,7 @@ wss.on('connection', (ws, req) => {
 
     if (msg.event === 'start') {
       console.log("🎤 Stream started");
-      audioChunks = []; // Reset for new session
+      audioChunks = [];
     } else if (msg.event === 'media') {
       const audio = Buffer.from(msg.media.payload, 'base64');
       audioChunks.push(audio);
@@ -65,15 +65,13 @@ wss.on('connection', (ws, req) => {
         console.log(`💬 Reply: ${reply}`);
         console.log(`🔊 MP3 URL: ${mp3Url}`);
 
-        // Send playback command to Twilio
+        // ✅ Send back TwiML with <Play> to Twilio
+        const playUrl = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host}${mp3Url}`;
         ws.send(JSON.stringify({
           event: 'playback',
-          twiml: `
-            <Response>
-              <Play>https://${process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host}${mp3Url}</Play>
-            </Response>
-          `
+          twiml: `<Response><Play>${playUrl}</Play></Response>`
         }));
+
       } catch (err) {
         console.error("❌ Error during processing:", err);
       }
