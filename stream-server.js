@@ -41,24 +41,37 @@ wss.on('connection', (ws) => {
   let audioChunks = [];
 
   ws.on('message', async (data) => {
-    const msg = JSON.parse(data);
-    if (msg.event === 'media') {
-      const audio = Buffer.from(msg.media.payload, 'base64');
-      audioChunks.push(audio);
-    } else if (msg.event === 'stop') {
-      const fullAudio = Buffer.concat(audioChunks);
-      const wavPath = path.join(AUDIO_DIR, `input-${uuidv4()}.wav`);
-      fs.writeFileSync(wavPath, fullAudio);
+  const msg = JSON.parse(data);
 
+  if (msg.event === 'start') {
+    console.log("🎤 Stream started");
+    audioChunks = []; // Reset in case reused
+  } else if (msg.event === 'media') {
+    const audio = Buffer.from(msg.media.payload, 'base64');
+    audioChunks.push(audio);
+    console.log(`📡 Received ${audio.length} bytes`);
+  } else if (msg.event === 'stop') {
+    console.log("🛑 Stream stopped. Processing audio...");
+    const fullAudio = Buffer.concat(audioChunks);
+    const wavPath = path.join(AUDIO_DIR, `input-${uuidv4()}.wav`);
+    fs.writeFileSync(wavPath, fullAudio);
+
+    try {
       const transcript = await transcribeAudio(fullAudio);
       const reply = await askKenya(transcript);
       const mp3Url = await synthesizeGoogleTTS(reply);
 
-      console.log(`Transcript: ${transcript}`);
-      console.log(`Reply: ${reply}`);
-      console.log(`URL: ${mp3Url}`);
+      console.log(`📝 Transcript: ${transcript}`);
+      console.log(`💬 Reply: ${reply}`);
+      console.log(`🔊 MP3 URL: ${mp3Url}`);
+
+      
+    } catch (err) {
+      console.error("❌ Error during processing:", err);
     }
-  });
+  }
+});
+
 });
 
 app.server = app.listen(port, () => {
