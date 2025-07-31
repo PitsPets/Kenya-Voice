@@ -8,6 +8,6 @@
   "dependencies": {
     "express": "^4.18.2",
     "ws": "^8.13.0",
-    "openai": "^4.28.1"  // ← this line is important
+    "openai": "^4.28.1"
   }
 }
