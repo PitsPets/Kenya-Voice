@@ -1,0 +1,8 @@
+{
+  "name": "kenya-stream-server",
+  "version": "1.0.0",
+  "main": "stream-server.js",
+  "scripts": {
+    "start": "node stream-server.js"
+  }
+}
