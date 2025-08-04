@@ -23,7 +23,11 @@ app.use(express.json());
 app.use(express.static('public'));
 
 const AUDIO_DIR = path.join(__dirname, 'public', 'audio');
-if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
+const TEMP_DIR = path.join(__dirname, 'temp');
+
+// Create necessary directories on startup
+fs.mkdirSync(AUDIO_DIR, { recursive: true });
+fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 // === STEP 1: Twilio Webhook to initiate <Stream> ===
 app.post('/twiml', (req, res) => {
@@ -99,10 +103,7 @@ wss.on('connection', (ws) => {
 async function transcribeAudio(rawBuffer) {
   console.log('🔐 Loaded OpenAI Key:', process.env.OPENAI_API_KEY ? '✅ Present' : '❌ Missing');
 
-  const tempDir = path.join(__dirname, 'temp');
-  fs.mkdirSync(tempDir, { recursive: true }); // ✅ FIXED
-
-  const tempPath = path.join(tempDir, `audio-${uuidv4()}.wav`);
+  const tempPath = path.join(TEMP_DIR, `audio-${uuidv4()}.wav`);
 
   // Wrap raw audio in WAV
   const writer = new wav.FileWriter(tempPath, {
@@ -123,7 +124,7 @@ async function transcribeAudio(rawBuffer) {
   });
 
   try {
-    fs.unlinkSync(tempPath);
+    fs.unlinkSync(tempPath); // clean up
   } catch (e) {
     console.warn('⚠️ Failed to delete temp file:', tempPath);
   }
