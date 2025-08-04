@@ -7,6 +7,7 @@ const { OpenAI } = require('openai');
 const textToSpeech = require('@google-cloud/text-to-speech');
 const { v4: uuidv4 } = require('uuid');
 const { WebSocketServer } = require('ws');
+const wav = require('wav');
 require('dotenv').config();
 
 const app = express();
@@ -94,19 +95,27 @@ wss.on('connection', (ws) => {
 });
 
 // === TRANSCRIBE AUDIO ===
-async function transcribeAudio(buffer) {
+async function transcribeAudio(rawBuffer) {
   console.log('🔐 Loaded OpenAI Key:', process.env.OPENAI_API_KEY ? '✅ Present' : '❌ Missing');
 
-  // Save buffer to temporary WAV file
   const tempDir = path.join(__dirname, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
   const tempPath = path.join(tempDir, `audio-${uuidv4()}.wav`);
-  fs.writeFileSync(tempPath, buffer);
 
-  const fileStream = fs.createReadStream(tempPath);
+  // Wrap raw PCM audio as proper WAV file
+  const writer = new wav.FileWriter(tempPath, {
+    channels: 1,
+    sampleRate: 8000,
+    bitDepth: 16,
+  });
+
+  writer.write(rawBuffer);
+  writer.end();
+
+  await new Promise(resolve => writer.on('finish', resolve));
 
   const resp = await openai.audio.transcriptions.create({
-    file: fileStream,
+    file: fs.createReadStream(tempPath),
     model: 'whisper-1',
     response_format: 'text',
   });
