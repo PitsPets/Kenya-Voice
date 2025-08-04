@@ -12,7 +12,7 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
-const port = process.env.PORT || 3001;
+const port = process.env.PORT;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const googleClient = new textToSpeech.TextToSpeechClient();
@@ -97,3 +97,4 @@ async function synthesizeGoogleTTS(text) {
 server.listen(port, () => {
   console.log(`📞 Kenya real-time server live on port ${port}`);
 });
+
