@@ -25,7 +25,6 @@ app.use(express.static('public'));
 const AUDIO_DIR = path.join(__dirname, 'public', 'audio');
 const TEMP_DIR = path.join(__dirname, 'temp');
 
-// Create necessary directories on startup
 fs.mkdirSync(AUDIO_DIR, { recursive: true });
 fs.mkdirSync(TEMP_DIR, { recursive: true });
 
@@ -105,17 +104,22 @@ async function transcribeAudio(rawBuffer) {
 
   const tempPath = path.join(TEMP_DIR, `audio-${uuidv4()}.wav`);
 
-  // Wrap raw audio in WAV
-  const writer = new wav.FileWriter(tempPath, {
-    channels: 1,
-    sampleRate: 8000,
-    bitDepth: 16,
+  // Wait for FileWriter to open before writing
+  await new Promise((resolve, reject) => {
+    const writer = new wav.FileWriter(tempPath, {
+      channels: 1,
+      sampleRate: 8000,
+      bitDepth: 16,
+    });
+
+    writer.on('open', () => {
+      writer.write(rawBuffer);
+      writer.end();
+    });
+
+    writer.on('finish', resolve);
+    writer.on('error', reject);
   });
-
-  writer.write(rawBuffer);
-  writer.end();
-
-  await new Promise(resolve => writer.on('finish', resolve));
 
   const resp = await openai.audio.transcriptions.create({
     file: fs.createReadStream(tempPath),
@@ -124,7 +128,7 @@ async function transcribeAudio(rawBuffer) {
   });
 
   try {
-    fs.unlinkSync(tempPath); // clean up
+    fs.unlinkSync(tempPath);
   } catch (e) {
     console.warn('⚠️ Failed to delete temp file:', tempPath);
   }
