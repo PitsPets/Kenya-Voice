@@ -95,11 +95,14 @@ wss.on('connection', (ws) => {
 
 // === TRANSCRIBE AUDIO ===
 async function transcribeAudio(buffer) {
+  console.log('🔐 Loaded OpenAI Key:', process.env.OPENAI_API_KEY ? '✅ Present' : '❌ Missing');
+
   const resp = await openai.audio.transcriptions.create({
     file: buffer,
     model: 'whisper-1',
     response_format: 'text',
-  });
+      });
+  
   return resp;
 }
 
@@ -116,3 +119,4 @@ async function synthesizeGoogleTTS(text) {
 server.listen(port, () => {
   console.log(`📞 Kenya real-time server live on port ${port}`);
 });
+
