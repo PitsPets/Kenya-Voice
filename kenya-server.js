@@ -87,7 +87,7 @@ wss.on('connection', (ws) => {
           let reply = '';
           try {
             const webhookResponse = await axios.post(
-              'https://kenya-pi.taildbcf43.ts.net/webhook/kenya',
+              'https://kenya-pi.taildbcf43.ts.net/webhook-test/kenya',
               { text: transcript }
             );
             reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
@@ -173,4 +173,5 @@ async function synthesizeGoogleTTS(text) {
 server.listen(port, () => {
   console.log(`📞 Kenya real-time server live on port ${port}`);
 });
+
 
