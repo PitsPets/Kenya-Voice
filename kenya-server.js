@@ -27,14 +27,16 @@ const TEMP_DIR = path.join(__dirname, 'temp');
 fs.mkdirSync(AUDIO_DIR, { recursive: true });
 fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-// === STEP 1: Twilio Webhook to initiate <Stream> ===
+// === TWIML RESPONSE USING GOOGLE TTS PRE-RECORDED AUDIO ===
 app.post('/twiml', (req, res) => {
   const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host;
+  const audioUrl = `https://${host}/audio/kenya-greeting.wav`;
   const wsUrl = `wss://${host}/stream`;
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Hi! This is Kenya. You can start talking now.</Say>
+  <Play>${audioUrl}</Play>
+  <Pause length="1" />
   <Connect>
     <Stream url="${wsUrl}" />
   </Connect>
@@ -44,7 +46,7 @@ app.post('/twiml', (req, res) => {
   res.send(twiml);
 });
 
-// === STEP 2: WebSocket for Twilio <Stream> ===
+// === WebSocket for Twilio <Stream> ===
 wss.on('connection', (ws) => {
   console.log('🔗 Twilio connected to /stream');
 
