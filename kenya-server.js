@@ -62,9 +62,10 @@ wss.on('connection', (ws) => {
         console.log('📝 Transcribed:', transcript);
 
         // Ask n8n webhook
-        const webhookResponse = await axios.post('https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a', {
-          text: transcript,
-        });
+        const webhookResponse = await axios.post(
+          'https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a',
+          { text: transcript }
+        );
 
         const reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
         console.log('🤖 Kenya said:', reply);
@@ -99,10 +100,11 @@ async function transcribeAudio(rawBuffer) {
   console.log('🔐 Loaded OpenAI Key:', process.env.OPENAI_API_KEY ? '✅ Present' : '❌ Missing');
 
   const tempDir = path.join(__dirname, 'temp');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+  fs.mkdirSync(tempDir, { recursive: true }); // ✅ FIXED
+
   const tempPath = path.join(tempDir, `audio-${uuidv4()}.wav`);
 
-  // Wrap raw PCM audio as proper WAV file
+  // Wrap raw audio in WAV
   const writer = new wav.FileWriter(tempPath, {
     channels: 1,
     sampleRate: 8000,
@@ -120,7 +122,12 @@ async function transcribeAudio(rawBuffer) {
     response_format: 'text',
   });
 
-  fs.unlinkSync(tempPath); // clean up
+  try {
+    fs.unlinkSync(tempPath);
+  } catch (e) {
+    console.warn('⚠️ Failed to delete temp file:', tempPath);
+  }
+
   return resp;
 }
 
