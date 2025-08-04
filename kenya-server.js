@@ -24,7 +24,6 @@ app.use(express.static('public'));
 
 const AUDIO_DIR = path.join(__dirname, 'public', 'audio');
 const TEMP_DIR = path.join(__dirname, 'temp');
-
 fs.mkdirSync(AUDIO_DIR, { recursive: true });
 fs.mkdirSync(TEMP_DIR, { recursive: true });
 
@@ -49,6 +48,9 @@ app.post('/twiml', (req, res) => {
 wss.on('connection', (ws) => {
   console.log('🔗 Twilio connected to /stream');
 
+  ws.audioChunks = [];
+  ws.processing = false;
+
   ws.on('message', async (msg) => {
     const json = JSON.parse(msg.toString());
 
@@ -58,33 +60,40 @@ wss.on('connection', (ws) => {
 
     if (json.event === 'media') {
       try {
-        const audioBuffer = Buffer.from(json.media.payload, 'base64');
+        const chunk = Buffer.from(json.media.payload, 'base64');
+        ws.audioChunks.push(chunk);
 
-        // Transcribe with Whisper
-        const transcript = await transcribeAudio(audioBuffer);
-        console.log('📝 Transcribed:', transcript);
+        // Wait until ~3s of audio is collected before processing
+        if (ws.audioChunks.length >= 80 && !ws.processing) {
+          ws.processing = true;
+          const audioBuffer = Buffer.concat(ws.audioChunks);
+          ws.audioChunks = [];
 
-        // Ask n8n webhook
-        const webhookResponse = await axios.post(
-          'https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a',
-          { text: transcript }
-        );
+          console.log('🎧 Collected ~3s audio, sending to Whisper...');
+          const transcript = await transcribeAudio(audioBuffer);
+          console.log('📝 Transcribed:', transcript);
 
-        const reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
-        console.log('🤖 Kenya said:', reply);
+          const webhookResponse = await axios.post(
+            'https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a',
+            { text: transcript }
+          );
 
-        // Synthesize to LINEAR16 audio for Twilio
-        const audioReply = await synthesizeGoogleTTS(reply);
+          const reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
+          console.log('🤖 Kenya said:', reply);
 
-        const mediaMessage = {
-          event: 'media',
-          media: {
-            payload: audioReply.toString('base64'),
-          },
-        };
-        ws.send(JSON.stringify(mediaMessage));
+          const audioReply = await synthesizeGoogleTTS(reply);
+          const mediaMessage = {
+            event: 'media',
+            media: {
+              payload: audioReply.toString('base64'),
+            },
+          };
+          ws.send(JSON.stringify(mediaMessage));
+          ws.processing = false;
+        }
       } catch (err) {
-        console.error('❌ Error in WebSocket message:', err);
+        console.error('❌ Error handling media:', err);
+        ws.processing = false;
       }
     }
 
@@ -100,11 +109,8 @@ wss.on('connection', (ws) => {
 
 // === TRANSCRIBE AUDIO ===
 async function transcribeAudio(rawBuffer) {
-  console.log('🔐 Loaded OpenAI Key:', process.env.OPENAI_API_KEY ? '✅ Present' : '❌ Missing');
-
   const tempPath = path.join(TEMP_DIR, `audio-${uuidv4()}.wav`);
 
-  // Wait for FileWriter to open before writing
   await new Promise((resolve, reject) => {
     const writer = new wav.FileWriter(tempPath, {
       channels: 1,
