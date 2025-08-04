@@ -11,8 +11,10 @@
     "openai": "^4.28.1",
     "@google-cloud/text-to-speech": "^4.2.0",
     "uuid": "^9.0.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "axios": "^1.6.8",
   }
 }
+
 
 
