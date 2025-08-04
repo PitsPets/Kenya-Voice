@@ -27,7 +27,7 @@ const TEMP_DIR = path.join(__dirname, 'temp');
 fs.mkdirSync(AUDIO_DIR, { recursive: true });
 fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-// === TWIML RESPONSE (no Play or Pause) ===
+// === TWIML for incoming call ===
 app.post('/twiml', (req, res) => {
   const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host;
   const wsUrl = `wss://${host}/stream`;
@@ -43,12 +43,14 @@ app.post('/twiml', (req, res) => {
   res.send(twiml);
 });
 
-// === WebSocket for Twilio <Stream> ===
+// === WebSocket for Twilio Streaming ===
 wss.on('connection', (ws) => {
   console.log('🔗 Twilio connected to /stream');
-
   ws.audioChunks = [];
   ws.processing = false;
+
+  // Twilio ping-pong to avoid disconnects
+  ws.on('ping', () => ws.pong());
 
   ws.on('message', async (msg) => {
     const json = JSON.parse(msg.toString());
@@ -68,25 +70,47 @@ wss.on('connection', (ws) => {
           ws.audioChunks = [];
 
           console.log('🎧 Collected ~3s audio, sending to Whisper...');
-          const transcript = await transcribeAudio(audioBuffer);
+          let transcript = '';
+          try {
+            transcript = await transcribeAudio(audioBuffer);
+          } catch (err) {
+            console.warn('⚠️ Whisper error:', err);
+            transcript = '';
+          }
+
+          if (!transcript.trim()) {
+            transcript = 'Wala po akong narinig. Paki-ulit po.';
+          }
+
           console.log('📝 Transcribed:', transcript);
 
-          const webhookResponse = await axios.post(
-            'https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a',
-            { text: transcript }
-          );
+          let reply = '';
+          try {
+            const webhookResponse = await axios.post(
+              'https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a',
+              { text: transcript }
+            );
+            reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
+          } catch (err) {
+            console.error('❌ Error getting Kenya reply:', err);
+            reply = 'Nagka-problema po. Paki-ulit nalang.';
+          }
 
-          const reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
           console.log('🤖 Kenya said:', reply);
 
-          const audioReply = await synthesizeGoogleTTS(reply);
-          const mediaMessage = {
-            event: 'media',
-            media: {
-              payload: audioReply.toString('base64'),
-            },
-          };
-          ws.send(JSON.stringify(mediaMessage));
+          try {
+            const audioReply = await synthesizeGoogleTTS(reply);
+            const mediaMessage = {
+              event: 'media',
+              media: {
+                payload: audioReply.toString('base64'),
+              },
+            };
+            ws.send(JSON.stringify(mediaMessage));
+          } catch (err) {
+            console.error('❌ Error in Google TTS:', err);
+          }
+
           ws.processing = false;
         }
       } catch (err) {
@@ -105,7 +129,7 @@ wss.on('connection', (ws) => {
   });
 });
 
-// === TRANSCRIBE AUDIO ===
+// === Whisper Transcription ===
 async function transcribeAudio(rawBuffer) {
   const tempPath = path.join(TEMP_DIR, `audio-${uuidv4()}.wav`);
 
@@ -115,12 +139,8 @@ async function transcribeAudio(rawBuffer) {
       sampleRate: 8000,
       bitDepth: 16,
     });
-
-    writer.on('open', () => {
-      writer.write(rawBuffer);
-      writer.end();
-    });
-
+    writer.write(rawBuffer);
+    writer.end();
     writer.on('finish', resolve);
     writer.on('error', reject);
   });
@@ -140,7 +160,7 @@ async function transcribeAudio(rawBuffer) {
   return resp;
 }
 
-// === GOOGLE TTS ===
+// === Google TTS (Tagalog Voice) ===
 async function synthesizeGoogleTTS(text) {
   const [response] = await googleClient.synthesizeSpeech({
     input: { text },
