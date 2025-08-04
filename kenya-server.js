@@ -27,16 +27,13 @@ const TEMP_DIR = path.join(__dirname, 'temp');
 fs.mkdirSync(AUDIO_DIR, { recursive: true });
 fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-// === TWIML RESPONSE USING GOOGLE TTS PRE-RECORDED AUDIO ===
+// === TWIML RESPONSE (no Play or Pause) ===
 app.post('/twiml', (req, res) => {
   const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host;
-  const audioUrl = `https://${host}/audio/kenya-greeting.wav`;
   const wsUrl = `wss://${host}/stream`;
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Play>${audioUrl}</Play>
-  <Pause length="1" />
   <Connect>
     <Stream url="${wsUrl}" />
   </Connect>
@@ -65,7 +62,6 @@ wss.on('connection', (ws) => {
         const chunk = Buffer.from(json.media.payload, 'base64');
         ws.audioChunks.push(chunk);
 
-        // Wait until ~3s of audio is collected before processing
         if (ws.audioChunks.length >= 80 && !ws.processing) {
           ws.processing = true;
           const audioBuffer = Buffer.concat(ws.audioChunks);
