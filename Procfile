@@ -1,1 +1,2 @@
-web: node stream-server.js
+web: node kenya-server.js
+
