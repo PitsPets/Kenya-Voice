@@ -1,7 +1,7 @@
 {
   "name": "kenya-stream-server",
   "version": "1.0.0",
-  "main": "stream-server.js",
+  "main": "kenya-server.js",
   "scripts": {
     "start": "node kenya-server.js"
   },
@@ -14,4 +14,5 @@
     "dotenv": "^16.4.5"
   }
 }
+
 
