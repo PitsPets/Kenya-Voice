@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "stream-server.js",
   "scripts": {
-    "start": "node stream-server.js"
+    "start": "node kenya-server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -14,3 +14,4 @@
     "dotenv": "^16.4.5"
   }
 }
+
