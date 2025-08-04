@@ -1,73 +1,80 @@
-// kenya-server.js (Option 2: Twilio <Record> + <Play> flow)
 const express = require('express');
 const axios = require('axios');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { OpenAI } = require('openai');
 const textToSpeech = require('@google-cloud/text-to-speech');
 const { v4: uuidv4 } = require('uuid');
+const { WebSocketServer } = require('ws');
 require('dotenv').config();
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 const port = process.env.PORT || 3001;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const googleClient = new textToSpeech.TextToSpeechClient();
 
+app.use(express.static('public'));
 const AUDIO_DIR = path.join(__dirname, 'public', 'audio');
 if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+// === WEBSOCKET STREAM HANDLER ===
+wss.on('connection', (ws) => {
+  console.log('🔗 Twilio connected to /stream');
 
-// --- STEP 1: Twilio hits this to begin the call ---
-app.post('/twiml', (req, res) => {
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Hi! This is Kenya. Anong gusto mong pag-usapan?</Say>
-  <Record action="/process-recording" maxLength="10" timeout="2" playBeep="true" />
-</Response>`;
-  res.type('text/xml');
-  res.send(twiml);
+  ws.on('message', async (msg) => {
+    const json = JSON.parse(msg.toString());
+
+    if (json.event === 'start') {
+      console.log('✅ Stream started');
+    }
+
+    if (json.event === 'media') {
+      try {
+        const audioBuffer = Buffer.from(json.media.payload, 'base64');
+
+        // Step 1: Transcribe audio
+        const transcript = await transcribeAudio(audioBuffer);
+        console.log('📝 Transcribed:', transcript);
+
+        // Step 2: POST to your n8n webhook
+        const webhookResponse = await axios.post('https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a', {
+          text: transcript
+        });
+
+        const reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
+        console.log('🤖 Kenya said:', reply);
+
+        // Step 3: Synthesize audio
+        const audioReply = await synthesizeGoogleTTS(reply);
+
+        // Step 4: Send back to Twilio stream
+        const mediaMessage = {
+          event: 'media',
+          media: {
+            payload: audioReply.toString('base64'),
+          },
+        };
+        ws.send(JSON.stringify(mediaMessage));
+      } catch (err) {
+        console.error('❌ Error in WebSocket message:', err);
+      }
+    }
+
+    if (json.event === 'stop') {
+      console.log('🛑 Stream ended');
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('🔌 Twilio disconnected');
+  });
 });
 
-// --- STEP 2: After user speaks, Twilio sends the recording URL here ---
-app.post('/process-recording', async (req, res) => {
-  const recordingUrl = req.body.RecordingUrl;
-  const fileUrl = `${recordingUrl}.wav`;
-  const localPath = path.join(AUDIO_DIR, `recording-${uuidv4()}.wav`);
-
-  try {
-    // Download audio from Twilio
-    const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-    fs.writeFileSync(localPath, response.data);
-
-    // Transcribe with Whisper
-    const transcript = await transcribeAudio(response.data);
-
-    // Get Kenya's response
-    const reply = await askKenya(transcript);
-
-    // Synthesize with Google TTS
-    const mp3Url = await synthesizeGoogleTTS(reply);
-
-    // Reply to Twilio with <Play>
-    const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host;
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Play>https://${host}${mp3Url}</Play>
-  <Redirect>/twiml</Redirect>
-</Response>`;
-
-    res.type('text/xml');
-    res.send(twiml);
-  } catch (err) {
-    console.error('❌ Error in processing recording:', err);
-    res.type('text/xml').send('<Response><Say>Sorry, nagka-error si Kenya.</Say></Response>');
-  }
-});
-
-// --- TRANSCRIBE AUDIO ---
+// === TRANSCRIBE AUDIO ===
 async function transcribeAudio(buffer) {
   const resp = await openai.audio.transcriptions.create({
     file: buffer,
@@ -77,32 +84,16 @@ async function transcribeAudio(buffer) {
   return resp;
 }
 
-// --- KENYA AI ---
-async function askKenya(prompt) {
-  const resp = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      { role: 'system', content: 'You are Kenya, a professional Taglish AI assistant. Keep replies short and natural.' },
-      { role: 'user', content: prompt },
-    ],
-  });
-  return resp.choices[0].message.content;
-}
-
-// --- GOOGLE TTS ---
+// === GOOGLE TTS ===
 async function synthesizeGoogleTTS(text) {
-  const request = {
+  const [response] = await googleClient.synthesizeSpeech({
     input: { text },
     voice: { languageCode: 'fil-PH', name: 'fil-PH-Wavenet-A' },
-    audioConfig: { audioEncoding: 'MP3' },
-  };
-  const [response] = await googleClient.synthesizeSpeech(request);
-  const filename = `kenya-${uuidv4()}.mp3`;
-  const filepath = path.join(AUDIO_DIR, filename);
-  fs.writeFileSync(filepath, response.audioContent);
-  return `/audio/${filename}`;
+    audioConfig: { audioEncoding: 'LINEAR16' }, // LINEAR16 = PCM = Twilio requirement
+  });
+  return response.audioContent;
 }
 
-app.listen(port, () => {
-  console.log(`📞 Kenya webhook server live on port ${port}`);
+server.listen(port, () => {
+  console.log(`📞 Kenya real-time server live on port ${port}`);
 });
