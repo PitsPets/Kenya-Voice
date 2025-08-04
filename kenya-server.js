@@ -97,12 +97,21 @@ wss.on('connection', (ws) => {
 async function transcribeAudio(buffer) {
   console.log('🔐 Loaded OpenAI Key:', process.env.OPENAI_API_KEY ? '✅ Present' : '❌ Missing');
 
+  // Save buffer to temporary WAV file
+  const tempDir = path.join(__dirname, 'temp');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+  const tempPath = path.join(tempDir, `audio-${uuidv4()}.wav`);
+  fs.writeFileSync(tempPath, buffer);
+
+  const fileStream = fs.createReadStream(tempPath);
+
   const resp = await openai.audio.transcriptions.create({
-    file: buffer,
+    file: fileStream,
     model: 'whisper-1',
     response_format: 'text',
-      });
-  
+  });
+
+  fs.unlinkSync(tempPath); // clean up
   return resp;
 }
 
@@ -119,4 +128,3 @@ async function synthesizeGoogleTTS(text) {
 server.listen(port, () => {
   console.log(`📞 Kenya real-time server live on port ${port}`);
 });
-
