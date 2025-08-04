@@ -12,16 +12,36 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
-const port = process.env.PORT;
+const port = process.env.PORT || 10000;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const googleClient = new textToSpeech.TextToSpeechClient();
 
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 app.use(express.static('public'));
+
 const AUDIO_DIR = path.join(__dirname, 'public', 'audio');
 if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
 
-// === WEBSOCKET STREAM HANDLER ===
+// === STEP 1: Twilio Webhook to initiate <Stream> ===
+app.post('/twiml', (req, res) => {
+  const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.headers.host;
+  const wsUrl = `wss://${host}/stream`;
+
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Hi! This is Kenya. You can start talking now.</Say>
+  <Connect>
+    <Stream url="${wsUrl}" />
+  </Connect>
+</Response>`;
+
+  res.type('text/xml');
+  res.send(twiml);
+});
+
+// === STEP 2: WebSocket for Twilio <Stream> ===
 wss.on('connection', (ws) => {
   console.log('🔗 Twilio connected to /stream');
 
@@ -36,22 +56,21 @@ wss.on('connection', (ws) => {
       try {
         const audioBuffer = Buffer.from(json.media.payload, 'base64');
 
-        // Step 1: Transcribe audio
+        // Transcribe with Whisper
         const transcript = await transcribeAudio(audioBuffer);
         console.log('📝 Transcribed:', transcript);
 
-        // Step 2: POST to your n8n webhook
+        // Ask n8n webhook
         const webhookResponse = await axios.post('https://kenya-pi.taildbcf43.ts.net/webhook/315cc5c7-ce73-484a-bf20-dca643a15d2a', {
-          text: transcript
+          text: transcript,
         });
 
         const reply = webhookResponse.data.text || 'Pasensya na, walang sagot.';
         console.log('🤖 Kenya said:', reply);
 
-        // Step 3: Synthesize audio
+        // Synthesize to LINEAR16 audio for Twilio
         const audioReply = await synthesizeGoogleTTS(reply);
 
-        // Step 4: Send back to Twilio stream
         const mediaMessage = {
           event: 'media',
           media: {
@@ -89,7 +108,7 @@ async function synthesizeGoogleTTS(text) {
   const [response] = await googleClient.synthesizeSpeech({
     input: { text },
     voice: { languageCode: 'fil-PH', name: 'fil-PH-Wavenet-A' },
-    audioConfig: { audioEncoding: 'LINEAR16' }, // LINEAR16 = PCM = Twilio requirement
+    audioConfig: { audioEncoding: 'LINEAR16' },
   });
   return response.audioContent;
 }
@@ -97,4 +116,3 @@ async function synthesizeGoogleTTS(text) {
 server.listen(port, () => {
   console.log(`📞 Kenya real-time server live on port ${port}`);
 });
-
